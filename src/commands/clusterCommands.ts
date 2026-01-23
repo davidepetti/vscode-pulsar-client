@@ -23,6 +23,7 @@ export async function addCluster(
         const name = await vscode.window.showInputBox({
             prompt: 'Enter a name for this cluster',
             placeHolder: 'my-pulsar-cluster',
+            ignoreFocusOut: true,
             validateInput: (value) => {
                 if (!value || value.trim().length === 0) {
                     return 'Cluster name is required';
@@ -43,6 +44,7 @@ export async function addCluster(
             prompt: 'Enter the Pulsar web service URL',
             placeHolder: 'http://localhost:8080',
             value: 'http://localhost:8080',
+            ignoreFocusOut: true,
             validateInput: (value) => {
                 if (!value || value.trim().length === 0) {
                     return 'Web service URL is required';
@@ -80,8 +82,9 @@ export async function addCluster(
 
         if (authMethod.value === 'token') {
             authToken = await vscode.window.showInputBox({
-                prompt: 'Enter the JWT token',
+                prompt: 'Paste your JWT token (copy it first, then paste here)',
                 password: true,
+                ignoreFocusOut: true,
                 validateInput: (value) => {
                     if (!value || value.trim().length === 0) {
                         return 'Token is required';

@@ -56,8 +56,9 @@ export class PulsarClientManager {
             // Try without health check - some clusters may not expose this endpoint
             try {
                 await adminClient.getTenants();
-            } catch (error) {
-                throw new Error(`Failed to connect to cluster: ${connection.name}`);
+            } catch (error: any) {
+                const message = error?.message || 'Unknown error';
+                throw new Error(`Failed to connect to cluster "${connection.name}": ${message}`);
             }
         }
 
