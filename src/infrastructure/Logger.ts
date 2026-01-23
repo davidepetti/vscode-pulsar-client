@@ -83,9 +83,6 @@ export class Logger {
     error(message: string, error?: any): void {
         if (Logger.globalLevel <= LogLevel.ERROR) {
             this.log('ERROR', message, error ? [error] : []);
-            if (this.channel) {
-                this.channel.show(true);
-            }
         }
     }
 

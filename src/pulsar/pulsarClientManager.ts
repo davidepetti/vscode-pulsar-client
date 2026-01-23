@@ -237,10 +237,19 @@ export class PulsarClientManager {
 
     /**
      * Get topic statistics
+     * Tries regular stats first, falls back to partitioned-stats for partitioned topics
      */
     async getTopicStats(clusterName: string, topic: string): Promise<TopicStats> {
         const admin = this.getAdminClient(clusterName);
-        return admin.getTopicStats(topic);
+        try {
+            return await admin.getTopicStats(topic);
+        } catch (error: any) {
+            // If regular stats returns 404, try partitioned-stats
+            if (error?.status === 404 || error?.statusCode === 404) {
+                return admin.getPartitionedTopicStats(topic);
+            }
+            throw error;
+        }
     }
 
     /**

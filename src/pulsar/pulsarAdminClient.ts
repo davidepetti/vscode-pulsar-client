@@ -172,6 +172,17 @@ export class PulsarAdminClient {
     }
 
     /**
+     * Get partitioned topic statistics (aggregated across all partitions)
+     */
+    async getPartitionedTopicStats(topic: string): Promise<TopicStats> {
+        const { tenant, namespace, topicName, persistent } = this.parseTopic(topic);
+        const domain = persistent ? 'persistent' : 'non-persistent';
+        return this.get<TopicStats>(
+            `/admin/v2/${domain}/${tenant}/${namespace}/${topicName}/partitioned-stats`
+        );
+    }
+
+    /**
      * Get topic internal stats
      */
     async getTopicInternalStats(topic: string): Promise<TopicInternalStats> {
