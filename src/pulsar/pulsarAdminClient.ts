@@ -256,9 +256,19 @@ export class PulsarAdminClient {
 
     /**
      * Get subscription stats
+     * Tries regular topic stats first, falls back to partitioned-stats for partitioned topics
      */
     async getSubscriptionStats(topic: string, subscription: string): Promise<SubscriptionStats> {
-        const stats = await this.getTopicStats(topic);
+        let stats: TopicStats;
+        try {
+            stats = await this.getTopicStats(topic);
+        } catch (error: any) {
+            if (error?.status === 404 || error?.statusCode === 404) {
+                stats = await this.getPartitionedTopicStats(topic);
+            } else {
+                throw error;
+            }
+        }
         return stats.subscriptions[subscription];
     }
 
