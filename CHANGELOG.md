@@ -1,0 +1,48 @@
+# Changelog
+
+All notable changes to the Pulsar Client for VSCode extension will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - 2026-01-22
+
+### Added
+- Initial release of Pulsar Client for VSCode
+- **Cluster Management**
+  - Add and remove Pulsar cluster connections
+  - Token-based authentication support
+  - Persistent cluster configuration
+- **Explorer View**
+  - Hierarchical tree view: Clusters → Tenants → Namespaces → Topics
+  - Subscriptions view
+  - Brokers view
+- **Tenant Operations**
+  - Create and delete tenants
+- **Namespace Operations**
+  - Create and delete namespaces
+- **Topic Operations**
+  - Create topics (partitioned and non-partitioned)
+  - Delete topics
+  - Topic Details WebView with real-time statistics
+  - Copy topic name to clipboard
+- **Message Producer**
+  - WebSocket-based message production
+  - Message key support
+  - Custom properties support
+  - Send confirmation with message ID
+- **Message Consumer**
+  - WebSocket-based message consumption
+  - Latest/Earliest position selection
+  - Real-time message display
+  - JSON formatting
+  - Automatic message acknowledgment
+- **Subscription Management**
+  - Create and delete subscriptions
+  - Reset subscription position
+  - View subscription details and backlog
+
+### Technical Details
+- Uses Pulsar Admin REST API for all admin operations
+- Uses Pulsar WebSocket API for produce/consume
+- No native dependencies required

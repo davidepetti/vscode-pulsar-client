@@ -1,0 +1,421 @@
+{
+  "name": "vscode-pulsar-client",
+  "displayName": "Pulsar Client",
+  "description": "Apache Pulsar client with StreamNative Cloud support for topic management, message production/consumption, and cluster monitoring",
+  "version": "0.1.0",
+  "publisher": "davidepetti",
+  "license": "MIT",
+  "pricing": "Free",
+  "icon": "resources/pulsar-icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davidepetti/vscode-pulsar-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/davidepetti/vscode-pulsar-client/issues"
+  },
+  "homepage": "https://github.com/davidepetti/vscode-pulsar-client#readme",
+  "keywords": [
+    "pulsar",
+    "apache pulsar",
+    "streaming",
+    "messaging",
+    "streamnative",
+    "topics",
+    "subscriptions",
+    "broker"
+  ],
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20.0.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "galleryBanner": {
+    "color": "#188FFF",
+    "theme": "dark"
+  },
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pulsar-explorer",
+          "title": "Pulsar",
+          "icon": "resources/pulsar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "pulsar-explorer": [
+        {
+          "id": "pulsarExplorer",
+          "name": "Clusters",
+          "icon": "$(server-environment)"
+        },
+        {
+          "id": "pulsarSubscriptions",
+          "name": "Subscriptions",
+          "icon": "$(organization)"
+        },
+        {
+          "id": "pulsarBrokers",
+          "name": "Brokers",
+          "icon": "$(server)"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "pulsar.addCluster",
+        "title": "Add Cluster",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pulsar.removeCluster",
+        "title": "Remove Cluster",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pulsar.refreshCluster",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pulsar.testConnection",
+        "title": "Test Connection",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "pulsar.createTenant",
+        "title": "Create Tenant",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pulsar.deleteTenant",
+        "title": "Delete Tenant",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pulsar.createNamespace",
+        "title": "Create Namespace",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pulsar.deleteNamespace",
+        "title": "Delete Namespace",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pulsar.createTopic",
+        "title": "Create Topic",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pulsar.deleteTopic",
+        "title": "Delete Topic",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pulsar.produceMessage",
+        "title": "Produce Message",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "pulsar.consumeMessages",
+        "title": "Consume Messages",
+        "icon": "$(radio-tower)"
+      },
+      {
+        "command": "pulsar.createSubscription",
+        "title": "Create Subscription",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pulsar.deleteSubscription",
+        "title": "Delete Subscription",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pulsar.resetSubscription",
+        "title": "Reset Subscription",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pulsar.peekMessages",
+        "title": "Peek Messages",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "pulsar.showTopicDetails",
+        "title": "Show Topic Details",
+        "icon": "$(info)"
+      },
+      {
+        "command": "pulsar.showTopicDashboard",
+        "title": "Show Topic Dashboard",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "pulsar.showClusterDashboard",
+        "title": "Show Cluster Dashboard",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "pulsar.findTopic",
+        "title": "Pulsar: Find Topic",
+        "icon": "$(search)"
+      },
+      {
+        "command": "pulsar.findSubscription",
+        "title": "Pulsar: Find Subscription",
+        "icon": "$(search)"
+      },
+      {
+        "command": "pulsar.showSubscriptionDetails",
+        "title": "Show Subscription Details",
+        "icon": "$(info)"
+      },
+      {
+        "command": "pulsar.showBrokerDetails",
+        "title": "Show Broker Details",
+        "icon": "$(info)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pulsar.addCluster",
+          "when": "view == pulsarExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pulsar.findTopic",
+          "when": "view == pulsarExplorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "pulsar.refreshCluster",
+          "when": "view == pulsarExplorer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "pulsar.findSubscription",
+          "when": "view == pulsarSubscriptions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "pulsar.refreshCluster",
+          "when": "view == pulsarSubscriptions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "pulsar.refreshCluster",
+          "when": "view == pulsarBrokers",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "pulsar.showClusterDashboard",
+          "when": "view == pulsarExplorer && viewItem == cluster",
+          "group": "0_info@1"
+        },
+        {
+          "command": "pulsar.testConnection",
+          "when": "view == pulsarExplorer && viewItem == cluster",
+          "group": "0_info@2"
+        },
+        {
+          "command": "pulsar.createTenant",
+          "when": "view == pulsarExplorer && viewItem == cluster",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "pulsar.removeCluster",
+          "when": "view == pulsarExplorer && viewItem == cluster",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "pulsar.createNamespace",
+          "when": "view == pulsarExplorer && viewItem == tenant",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "pulsar.deleteTenant",
+          "when": "view == pulsarExplorer && viewItem == tenant",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "pulsar.createTopic",
+          "when": "view == pulsarExplorer && viewItem == namespace",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "pulsar.deleteNamespace",
+          "when": "view == pulsarExplorer && viewItem == namespace",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "pulsar.showTopicDashboard",
+          "when": "view == pulsarExplorer && viewItem == topic",
+          "group": "inline"
+        },
+        {
+          "command": "pulsar.produceMessage",
+          "when": "view == pulsarExplorer && viewItem == topic",
+          "group": "2_actions@1"
+        },
+        {
+          "command": "pulsar.consumeMessages",
+          "when": "view == pulsarExplorer && viewItem == topic",
+          "group": "2_actions@2"
+        },
+        {
+          "command": "pulsar.createSubscription",
+          "when": "view == pulsarExplorer && viewItem == topic",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "pulsar.showTopicDashboard",
+          "when": "view == pulsarExplorer && viewItem == topic",
+          "group": "0_info@1"
+        },
+        {
+          "command": "pulsar.deleteTopic",
+          "when": "view == pulsarExplorer && viewItem == topic",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "pulsar.showSubscriptionDetails",
+          "when": "view == pulsarSubscriptions && viewItem == subscription",
+          "group": "0_info@1"
+        },
+        {
+          "command": "pulsar.resetSubscription",
+          "when": "view == pulsarSubscriptions && viewItem == subscription",
+          "group": "2_actions@1"
+        },
+        {
+          "command": "pulsar.peekMessages",
+          "when": "view == pulsarSubscriptions && viewItem == subscription",
+          "group": "2_actions@2"
+        },
+        {
+          "command": "pulsar.deleteSubscription",
+          "when": "view == pulsarSubscriptions && viewItem == subscription",
+          "group": "9_danger@1"
+        },
+        {
+          "command": "pulsar.showBrokerDetails",
+          "when": "view == pulsarBrokers && viewItem == broker",
+          "group": "0_info@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Pulsar",
+      "properties": {
+        "pulsar.clusters": {
+          "type": "array",
+          "default": [],
+          "description": "List of Pulsar clusters",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Cluster name"
+              },
+              "webServiceUrl": {
+                "type": "string",
+                "description": "Web service URL (e.g., http://localhost:8080)"
+              }
+            }
+          }
+        },
+        "pulsar.logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "Log level for Pulsar extension output"
+        },
+        "pulsar.connectionTimeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "Pulsar connection timeout in milliseconds"
+        },
+        "pulsar.requestTimeout": {
+          "type": "number",
+          "default": 60000,
+          "description": "Pulsar request timeout in milliseconds"
+        },
+        "pulsar.explorer.largeListThreshold": {
+          "type": "number",
+          "default": 150,
+          "description": "Number of topics above which to use paginated webview instead of tree view"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "pulsar.findTopic",
+        "key": "ctrl+alt+p t",
+        "mac": "cmd+alt+p t"
+      },
+      {
+        "command": "pulsar.findSubscription",
+        "key": "ctrl+alt+p s",
+        "mac": "cmd+alt+p s"
+      },
+      {
+        "command": "pulsar.addCluster",
+        "key": "ctrl+alt+p a",
+        "mac": "cmd+alt+p a"
+      },
+      {
+        "command": "pulsar.refreshCluster",
+        "key": "ctrl+alt+p r",
+        "mac": "cmd+alt+p r"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run bundle",
+    "compile": "tsc -p ./",
+    "watch": "npm-run-all --parallel watch:*",
+    "watch:tsc": "tsc -watch -p ./",
+    "watch:esbuild": "node esbuild.js --watch",
+    "bundle": "node esbuild.js --production",
+    "bundle:dev": "node esbuild.js",
+    "lint": "eslint src --ext ts",
+    "pretest": "npm run compile && npm run lint",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.5.13",
+    "@typescript-eslint/eslint-plugin": "^8.15.0",
+    "@typescript-eslint/parser": "^8.15.0",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.15.0",
+    "mocha": "^11.0.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
