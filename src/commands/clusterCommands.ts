@@ -82,8 +82,7 @@ export async function addCluster(
 
         if (authMethod.value === 'token') {
             authToken = await vscode.window.showInputBox({
-                prompt: 'Paste your JWT token (copy it first, then paste here)',
-                password: true,
+                prompt: 'Paste your JWT token',
                 ignoreFocusOut: true,
                 validateInput: (value) => {
                     if (!value || value.trim().length === 0) {

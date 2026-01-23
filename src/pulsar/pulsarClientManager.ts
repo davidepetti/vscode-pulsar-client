@@ -50,15 +50,34 @@ export class PulsarClientManager {
             vscode.workspace.getConfiguration('pulsar').get('requestTimeout', 60000)
         );
 
-        // Test connection
-        const healthy = await adminClient.healthCheck();
-        if (!healthy) {
-            // Try without health check - some clusters may not expose this endpoint
+        // Test connection - try multiple endpoints as some may require admin permissions
+        let connected = await adminClient.healthCheck();
+
+        if (!connected) {
+            // Try getting clusters - often works with limited permissions
+            try {
+                await adminClient.getClusters();
+                connected = true;
+            } catch {
+                // Ignore - will try tenants next
+            }
+        }
+
+        if (!connected) {
+            // Try getting tenants - requires more permissions
             try {
                 await adminClient.getTenants();
+                connected = true;
             } catch (error: any) {
-                const message = error?.message || 'Unknown error';
-                throw new Error(`Failed to connect to cluster "${connection.name}": ${message}`);
+                // If we get a 401/403, the connection works but permissions are limited
+                // Accept the connection anyway - user can still browse what they have access to
+                if (error?.status === 401 || error?.status === 403 || error?.statusCode === 401 || error?.statusCode === 403) {
+                    this.logger.warn(`Limited permissions for cluster "${connection.name}" - some operations may fail`);
+                    connected = true;
+                } else {
+                    const message = error?.message || 'Unknown error';
+                    throw new Error(`Failed to connect to cluster "${connection.name}": ${message}`);
+                }
             }
         }
 
