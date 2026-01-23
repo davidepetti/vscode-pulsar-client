@@ -98,16 +98,29 @@ export class SubscriptionProvider extends BaseProvider<PulsarTreeItem> {
         // Get subscriptions from all accessible namespaces
         for (const { tenant, namespace } of namespacesToCheck) {
             try {
-                const topics = await this.clientManager.getTopics(clusterName, tenant, namespace);
+                // Get both regular topics and partitioned topics
+                const [topics, partitionedTopics] = await Promise.all([
+                    this.clientManager.getTopics(clusterName, tenant, namespace).catch(() => []),
+                    this.clientManager.getPartitionedTopics(clusterName, tenant, namespace).catch(() => [])
+                ]);
+
+                // Collect unique topic names (skip individual partition topics)
+                const uniqueTopics = new Set<string>();
 
                 for (const topic of topics) {
-                    // Skip partition topics
+                    // Skip individual partition topics (e.g., topic-partition-0)
                     if (topic.match(/-partition-\d+$/)) {
                         continue;
                     }
+                    uniqueTopics.add(this.extractTopicName(topic));
+                }
 
-                    const topicName = this.extractTopicName(topic);
+                // Add partitioned topics (these are the base names)
+                for (const topic of partitionedTopics) {
+                    uniqueTopics.add(this.extractTopicName(topic));
+                }
 
+                for (const topicName of uniqueTopics) {
                     try {
                         const fullTopic = `persistent://${tenant}/${namespace}/${topicName}`;
                         const subs = await this.clientManager.getSubscriptions(clusterName, fullTopic);

@@ -2,7 +2,7 @@
   "name": "vscode-pulsar-client",
   "displayName": "Pulsar Client",
   "description": "Apache Pulsar client with StreamNative Cloud support for topic management, message production/consumption, and cluster monitoring",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "davidepetti",
   "license": "MIT",
   "pricing": "Free",
