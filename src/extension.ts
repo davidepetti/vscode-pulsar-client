@@ -160,6 +160,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('pulsar.deleteNamespace', (node: NamespaceNode) =>
             namespaceCommands.deleteNamespace(clientManager, pulsarExplorerProvider, node)
         ),
+        vscode.commands.registerCommand('pulsar.addNamespace', (clusterName: string) =>
+            namespaceCommands.addNamespace(clientManager, pulsarExplorerProvider, clusterName)
+        ),
 
         // Topic commands
         vscode.commands.registerCommand('pulsar.createTopic', (node: NamespaceNode) =>

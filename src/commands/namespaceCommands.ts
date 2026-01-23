@@ -90,3 +90,71 @@ export async function deleteNamespace(
         ErrorHandler.handle(error, 'Deleting namespace');
     }
 }
+
+/**
+ * Add a namespace manually (for service accounts with limited permissions)
+ */
+export async function addNamespace(
+    clientManager: PulsarClientManager,
+    provider: PulsarExplorerProvider,
+    clusterName: string
+): Promise<void> {
+    try {
+        // Get namespace path
+        const namespacePath = await vscode.window.showInputBox({
+            prompt: 'Enter namespace path (tenant/namespace)',
+            placeHolder: 'my-tenant/my-namespace',
+            ignoreFocusOut: true,
+            validateInput: (value) => {
+                if (!value || value.trim().length === 0) {
+                    return 'Namespace path is required';
+                }
+                const parts = value.trim().split('/');
+                if (parts.length !== 2) {
+                    return 'Namespace path must be in format: tenant/namespace';
+                }
+                if (!parts[0] || !parts[1]) {
+                    return 'Both tenant and namespace are required';
+                }
+                return undefined;
+            }
+        });
+
+        if (!namespacePath) {
+            return;
+        }
+
+        // Validate that we can access this namespace
+        const [tenant, namespace] = namespacePath.trim().split('/');
+
+        await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `Verifying access to ${namespacePath}...`,
+                cancellable: false
+            },
+            async () => {
+                // Try to access the namespace - get topics to verify we have access
+                try {
+                    await clientManager.getTopics(clusterName, tenant, namespace);
+                } catch (error: any) {
+                    // 404 is ok - namespace might be empty but accessible
+                    // 401/403 means no access
+                    if (error?.status === 401 || error?.status === 403 || error?.statusCode === 401 || error?.statusCode === 403) {
+                        throw new Error(`No access to namespace "${namespacePath}". Check your service account permissions.`);
+                    }
+                    // Other errors (like 404) might just mean empty namespace, so we continue
+                }
+
+                // Add the namespace to manual list
+                await clientManager.addManualNamespace(clusterName, namespacePath.trim());
+            }
+        );
+
+        provider.refresh();
+
+        vscode.window.showInformationMessage(`Namespace "${namespacePath}" added to ${clusterName}.`);
+    } catch (error) {
+        ErrorHandler.handle(error, 'Adding namespace');
+    }
+}

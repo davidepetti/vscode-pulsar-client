@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BaseProvider } from './BaseProvider';
 import { PulsarClientManager } from '../pulsar/pulsarClientManager';
+import { ErrorHandler } from '../infrastructure/ErrorHandler';
 import {
     PulsarTreeItem,
     ClusterNode,
@@ -9,7 +10,9 @@ import {
     TopicNode,
     PartitionNode,
     SubscriptionsContainerNode,
-    SubscriptionNode
+    SubscriptionNode,
+    AddNamespaceActionNode,
+    LimitedAccessInfoNode
 } from '../types/nodes';
 
 /**
@@ -91,42 +94,104 @@ export class PulsarExplorerProvider extends BaseProvider<PulsarTreeItem> {
      * Get tenant nodes for a cluster
      */
     private async getTenantNodes(clusterName: string): Promise<PulsarTreeItem[]> {
-        return this.getChildrenSafely(
-            undefined,
-            async () => {
-                const tenants = await this.clientManager.getTenants(clusterName);
+        const nodes: PulsarTreeItem[] = [];
+        let tenantsFromApi: string[] = [];
+        let hasPermissionError = false;
 
-                if (tenants.length === 0) {
-                    return [this.createEmptyItem('No tenants') as PulsarTreeItem];
-                }
+        // Try to get tenants from API
+        try {
+            tenantsFromApi = await this.clientManager.getTenants(clusterName);
+        } catch (error: any) {
+            // Check if this is a permission error
+            if (ErrorHandler.isAuthenticationError(error) || ErrorHandler.isAuthorizationError(error)) {
+                hasPermissionError = true;
+                this.logger.warn(`Limited permissions for cluster "${clusterName}" - cannot list tenants`);
+            } else {
+                ErrorHandler.handleSilently(error, 'Loading tenants');
+            }
+        }
 
-                return tenants
-                    .sort((a, b) => a.localeCompare(b))
-                    .map(tenant => new TenantNode(tenant, clusterName));
-            },
-            'Loading tenants'
-        );
+        // Get manually configured namespaces
+        const manualNamespaces = this.clientManager.getManualNamespaces(clusterName);
+
+        // Extract unique tenants from manual namespaces
+        const manualTenants = new Set<string>();
+        for (const ns of manualNamespaces) {
+            const parts = ns.split('/');
+            if (parts.length >= 1) {
+                manualTenants.add(parts[0]);
+            }
+        }
+
+        // Combine API tenants with manual tenants
+        const allTenants = new Set([...tenantsFromApi, ...manualTenants]);
+
+        // If we have permission error and no manual namespaces, show info and action
+        if (hasPermissionError && manualNamespaces.length === 0) {
+            nodes.push(new LimitedAccessInfoNode(clusterName, 'Limited permissions'));
+            nodes.push(new AddNamespaceActionNode(clusterName));
+            return nodes;
+        }
+
+        // Add tenant nodes
+        if (allTenants.size > 0) {
+            const sortedTenants = Array.from(allTenants).sort((a, b) => a.localeCompare(b));
+            for (const tenant of sortedTenants) {
+                nodes.push(new TenantNode(tenant, clusterName));
+            }
+        }
+
+        // If we had permission error but have manual namespaces, still show the add action
+        if (hasPermissionError) {
+            nodes.push(new AddNamespaceActionNode(clusterName));
+        }
+
+        // If no tenants at all
+        if (nodes.length === 0) {
+            return [this.createEmptyItem('No tenants') as PulsarTreeItem];
+        }
+
+        return nodes;
     }
 
     /**
      * Get namespace nodes for a tenant
      */
     private async getNamespaceNodes(clusterName: string, tenant: string): Promise<PulsarTreeItem[]> {
-        return this.getChildrenSafely(
-            undefined,
-            async () => {
-                const namespaces = await this.clientManager.getNamespaces(clusterName, tenant);
+        let namespacesFromApi: string[] = [];
+        let hasPermissionError = false;
 
-                if (namespaces.length === 0) {
-                    return [this.createEmptyItem('No namespaces') as PulsarTreeItem];
-                }
+        // Try to get namespaces from API
+        try {
+            namespacesFromApi = await this.clientManager.getNamespaces(clusterName, tenant);
+        } catch (error: any) {
+            if (ErrorHandler.isAuthenticationError(error) || ErrorHandler.isAuthorizationError(error)) {
+                hasPermissionError = true;
+                this.logger.warn(`Limited permissions for tenant "${tenant}" - cannot list namespaces`);
+            } else {
+                ErrorHandler.handleSilently(error, 'Loading namespaces');
+            }
+        }
 
-                return namespaces
-                    .sort((a, b) => a.localeCompare(b))
-                    .map(namespace => new NamespaceNode(namespace, clusterName, tenant));
-            },
-            'Loading namespaces'
-        );
+        // Get manually configured namespaces for this tenant
+        const manualNamespaces = this.clientManager.getManualNamespaces(clusterName);
+        const manualNsForTenant = manualNamespaces
+            .filter(ns => ns.startsWith(`${tenant}/`))
+            .map(ns => ns.split('/')[1]);
+
+        // Combine
+        const allNamespaces = new Set([...namespacesFromApi, ...manualNsForTenant]);
+
+        if (allNamespaces.size === 0) {
+            if (hasPermissionError) {
+                return [this.createEmptyItem('No access to namespaces') as PulsarTreeItem];
+            }
+            return [this.createEmptyItem('No namespaces') as PulsarTreeItem];
+        }
+
+        return Array.from(allNamespaces)
+            .sort((a, b) => a.localeCompare(b))
+            .map(namespace => new NamespaceNode(namespace, clusterName, tenant));
     }
 
     /**

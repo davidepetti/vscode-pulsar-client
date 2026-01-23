@@ -278,3 +278,40 @@ export class SubscriptionsContainerNode extends ContainerNode {
         this.iconPath = new vscode.ThemeIcon('mail-read');
     }
 }
+
+/**
+ * Action node for adding a namespace manually (when LIST_TENANTS permission is missing)
+ */
+export class AddNamespaceActionNode extends PulsarTreeItem {
+    constructor(clusterName: string) {
+        super(
+            'Add Namespace...',
+            vscode.TreeItemCollapsibleState.None,
+            'addNamespaceAction',
+            clusterName
+        );
+        this.iconPath = new vscode.ThemeIcon('add');
+        this.tooltip = 'Your service account may not have permission to list all tenants. Click to manually add a namespace you have access to.';
+        this.command = {
+            command: 'pulsar.addNamespace',
+            title: 'Add Namespace',
+            arguments: [clusterName]
+        };
+    }
+}
+
+/**
+ * Info node shown when user has limited permissions
+ */
+export class LimitedAccessInfoNode extends PulsarTreeItem {
+    constructor(clusterName: string, message: string) {
+        super(
+            message,
+            vscode.TreeItemCollapsibleState.None,
+            'limitedAccessInfo',
+            clusterName
+        );
+        this.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('editorWarning.foreground'));
+        this.tooltip = 'Your service account has limited permissions. Some operations may not be available.';
+    }
+}

@@ -2,7 +2,7 @@
   "name": "vscode-pulsar-client",
   "displayName": "Pulsar Client",
   "description": "Apache Pulsar client with StreamNative Cloud support for topic management, message production/consumption, and cluster monitoring",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "davidepetti",
   "license": "MIT",
   "pricing": "Free",
@@ -108,6 +108,11 @@
         "command": "pulsar.deleteNamespace",
         "title": "Delete Namespace",
         "icon": "$(trash)"
+      },
+      {
+        "command": "pulsar.addNamespace",
+        "title": "Add Namespace",
+        "icon": "$(add)"
       },
       {
         "command": "pulsar.createTopic",
@@ -362,6 +367,11 @@
           "type": "number",
           "default": 150,
           "description": "Number of topics above which to use paginated webview instead of tree view"
+        },
+        "pulsar.manualNamespaces": {
+          "type": "object",
+          "default": {},
+          "description": "Manually configured namespaces for clusters with limited permissions. Format: { \"clusterName\": [\"tenant/namespace\", ...] }"
         }
       }
     },

@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import { BaseProvider } from './BaseProvider';
 import { PulsarClientManager } from '../pulsar/pulsarClientManager';
+import { ErrorHandler } from '../infrastructure/ErrorHandler';
 import {
     PulsarTreeItem,
     ClusterNode,
-    SubscriptionNode
+    SubscriptionNode,
+    LimitedAccessInfoNode,
+    AddNamespaceActionNode
 } from '../types/nodes';
 
 /**
@@ -50,65 +53,103 @@ export class SubscriptionProvider extends BaseProvider<PulsarTreeItem> {
      * Get all subscriptions for a cluster
      */
     private async getSubscriptionsForCluster(clusterName: string): Promise<PulsarTreeItem[]> {
-        return this.getChildrenSafely(
-            undefined,
-            async () => {
-                const subscriptions: SubscriptionNode[] = [];
+        const subscriptions: SubscriptionNode[] = [];
+        let hasPermissionError = false;
 
-                // Get all tenants
-                const tenants = await this.clientManager.getTenants(clusterName);
+        // Try to get tenants from API
+        let tenantsFromApi: string[] = [];
+        try {
+            tenantsFromApi = await this.clientManager.getTenants(clusterName);
+        } catch (error: any) {
+            if (ErrorHandler.isAuthenticationError(error) || ErrorHandler.isAuthorizationError(error)) {
+                hasPermissionError = true;
+                this.logger.warn(`Limited permissions for cluster "${clusterName}" - cannot list tenants`);
+            } else {
+                ErrorHandler.handleSilently(error, 'Loading subscriptions');
+            }
+        }
 
-                for (const tenant of tenants) {
-                    // Get all namespaces for tenant
-                    const namespaces = await this.clientManager.getNamespaces(clusterName, tenant);
+        // Get manually configured namespaces
+        const manualNamespaces = this.clientManager.getManualNamespaces(clusterName);
 
-                    for (const namespace of namespaces) {
-                        // Get all topics for namespace
-                        const topics = await this.clientManager.getTopics(clusterName, tenant, namespace);
+        // Build list of tenant/namespace pairs to check
+        const namespacesToCheck: { tenant: string; namespace: string }[] = [];
 
-                        for (const topic of topics) {
-                            // Skip partition topics
-                            if (topic.match(/-partition-\d+$/)) {
-                                continue;
-                            }
+        // Add namespaces from API tenants
+        for (const tenant of tenantsFromApi) {
+            try {
+                const namespaces = await this.clientManager.getNamespaces(clusterName, tenant);
+                for (const namespace of namespaces) {
+                    namespacesToCheck.push({ tenant, namespace });
+                }
+            } catch {
+                // Skip tenants we can't access
+            }
+        }
 
-                            const topicName = this.extractTopicName(topic);
+        // Add manual namespaces
+        for (const ns of manualNamespaces) {
+            const parts = ns.split('/');
+            if (parts.length === 2) {
+                namespacesToCheck.push({ tenant: parts[0], namespace: parts[1] });
+            }
+        }
 
-                            try {
-                                // Get subscriptions for topic
-                                const fullTopic = `persistent://${tenant}/${namespace}/${topicName}`;
-                                const subs = await this.clientManager.getSubscriptions(clusterName, fullTopic);
-                                const stats = await this.clientManager.getTopicStats(clusterName, fullTopic).catch(() => null);
+        // Get subscriptions from all accessible namespaces
+        for (const { tenant, namespace } of namespacesToCheck) {
+            try {
+                const topics = await this.clientManager.getTopics(clusterName, tenant, namespace);
 
-                                for (const sub of subs) {
-                                    const subStats = stats?.subscriptions[sub];
-                                    subscriptions.push(new SubscriptionNode(
-                                        sub,
-                                        clusterName,
-                                        tenant,
-                                        namespace,
-                                        topicName,
-                                        subStats?.type,
-                                        subStats?.msgBacklog
-                                    ));
-                                }
-                            } catch {
-                                // Skip topics with errors
-                            }
+                for (const topic of topics) {
+                    // Skip partition topics
+                    if (topic.match(/-partition-\d+$/)) {
+                        continue;
+                    }
+
+                    const topicName = this.extractTopicName(topic);
+
+                    try {
+                        const fullTopic = `persistent://${tenant}/${namespace}/${topicName}`;
+                        const subs = await this.clientManager.getSubscriptions(clusterName, fullTopic);
+                        const stats = await this.clientManager.getTopicStats(clusterName, fullTopic).catch(() => null);
+
+                        for (const sub of subs) {
+                            const subStats = stats?.subscriptions[sub];
+                            subscriptions.push(new SubscriptionNode(
+                                sub,
+                                clusterName,
+                                tenant,
+                                namespace,
+                                topicName,
+                                subStats?.type,
+                                subStats?.msgBacklog
+                            ));
                         }
+                    } catch {
+                        // Skip topics with errors
                     }
                 }
+            } catch {
+                // Skip namespaces we can't access
+            }
+        }
 
-                if (subscriptions.length === 0) {
-                    return [this.createEmptyItem('No subscriptions found') as PulsarTreeItem];
-                }
+        // Build result
+        const result: PulsarTreeItem[] = [];
 
-                // Sort by subscription name
-                return subscriptions.sort((a, b) =>
-                    (a.subscriptionName || '').localeCompare(b.subscriptionName || '')
-                );
-            },
-            'Loading subscriptions'
+        if (hasPermissionError && subscriptions.length === 0 && manualNamespaces.length === 0) {
+            result.push(new LimitedAccessInfoNode(clusterName, 'Limited permissions'));
+            result.push(new AddNamespaceActionNode(clusterName));
+            return result;
+        }
+
+        if (subscriptions.length === 0) {
+            return [this.createEmptyItem('No subscriptions found') as PulsarTreeItem];
+        }
+
+        // Sort by subscription name
+        return subscriptions.sort((a, b) =>
+            (a.subscriptionName || '').localeCompare(b.subscriptionName || '')
         );
     }
 

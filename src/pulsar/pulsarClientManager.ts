@@ -372,6 +372,55 @@ export class PulsarClientManager {
         return {};
     }
 
+    // ==================== Manual Namespace Management ====================
+
+    /**
+     * Get manually configured namespaces for a cluster
+     * These are namespaces added by users who don't have LIST_TENANTS permission
+     */
+    getManualNamespaces(clusterName: string): string[] {
+        const config = vscode.workspace.getConfiguration('pulsar');
+        const manualNamespaces = config.get<Record<string, string[]>>('manualNamespaces', {});
+        return manualNamespaces[clusterName] || [];
+    }
+
+    /**
+     * Add a manually configured namespace
+     * @param clusterName The cluster name
+     * @param namespacePath The namespace path in format "tenant/namespace"
+     */
+    async addManualNamespace(clusterName: string, namespacePath: string): Promise<void> {
+        const config = vscode.workspace.getConfiguration('pulsar');
+        const manualNamespaces = config.get<Record<string, string[]>>('manualNamespaces', {});
+
+        if (!manualNamespaces[clusterName]) {
+            manualNamespaces[clusterName] = [];
+        }
+
+        if (!manualNamespaces[clusterName].includes(namespacePath)) {
+            manualNamespaces[clusterName].push(namespacePath);
+            await config.update('manualNamespaces', manualNamespaces, vscode.ConfigurationTarget.Global);
+            this.logger.info(`Added manual namespace "${namespacePath}" to cluster "${clusterName}"`);
+        }
+    }
+
+    /**
+     * Remove a manually configured namespace
+     */
+    async removeManualNamespace(clusterName: string, namespacePath: string): Promise<void> {
+        const config = vscode.workspace.getConfiguration('pulsar');
+        const manualNamespaces = config.get<Record<string, string[]>>('manualNamespaces', {});
+
+        if (manualNamespaces[clusterName]) {
+            manualNamespaces[clusterName] = manualNamespaces[clusterName].filter(ns => ns !== namespacePath);
+            if (manualNamespaces[clusterName].length === 0) {
+                delete manualNamespaces[clusterName];
+            }
+            await config.update('manualNamespaces', manualNamespaces, vscode.ConfigurationTarget.Global);
+            this.logger.info(`Removed manual namespace "${namespacePath}" from cluster "${clusterName}"`);
+        }
+    }
+
     // ==================== Configuration ====================
 
     /**
