@@ -489,28 +489,6 @@ export class PulsarClientManager {
     // ==================== Helper Methods ====================
 
     /**
-     * Get auth token for a cluster (for token decoding purposes)
-     */
-    async getAuthToken(clusterName: string): Promise<string | undefined> {
-        const cluster = this.clusters.get(clusterName);
-        if (!cluster) {
-            return undefined;
-        }
-
-        // First check if token is in the connection object
-        if (cluster.connection.authToken) {
-            return cluster.connection.authToken;
-        }
-
-        // Otherwise try to get from credential manager
-        if (cluster.connection.authMethod === 'token' && this.credentialManager) {
-            return this.credentialManager.getAuthToken(clusterName);
-        }
-
-        return undefined;
-    }
-
-    /**
      * Get admin client for a cluster
      */
     private getAdminClient(clusterName: string): PulsarAdminClient {

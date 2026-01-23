@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { BaseProvider } from './BaseProvider';
 import { PulsarClientManager } from '../pulsar/pulsarClientManager';
 import { ErrorHandler } from '../infrastructure/ErrorHandler';
-import { extractTenantInfo } from '../utils/tokenUtils';
 import {
     PulsarTreeItem,
     ClusterNode,
@@ -124,19 +123,11 @@ export class PulsarExplorerProvider extends BaseProvider<PulsarTreeItem> {
             }
         }
 
-        // If we have permission error and no manual namespaces, try to infer tenants from JWT token
-        if (hasPermissionError && manualNamespaces.length === 0) {
-            const discoveredTenants = await this.tryDiscoverTenantsFromToken(clusterName);
-            for (const tenant of discoveredTenants) {
-                manualTenants.add(tenant);
-            }
-        }
-
         // Combine API tenants with manual tenants
         const allTenants = new Set([...tenantsFromApi, ...manualTenants]);
 
-        // If we have permission error and still no tenants found, show info and action
-        if (hasPermissionError && allTenants.size === 0) {
+        // If we have permission error and no manual namespaces, show info and action
+        if (hasPermissionError && manualNamespaces.length === 0) {
             nodes.push(new LimitedAccessInfoNode(clusterName, 'Limited permissions'));
             nodes.push(new AddNamespaceActionNode(clusterName));
             return nodes;
@@ -335,53 +326,5 @@ export class PulsarExplorerProvider extends BaseProvider<PulsarTreeItem> {
         }
         // Already just the topic name
         return fullTopic.split('/').pop() || fullTopic;
-    }
-
-    /**
-     * Try to discover accessible tenants by decoding the JWT token
-     * This is used when LIST_TENANTS fails due to limited permissions
-     */
-    private async tryDiscoverTenantsFromToken(clusterName: string): Promise<string[]> {
-        const discoveredTenants: string[] = [];
-
-        try {
-            // Get the auth token for this cluster
-            const token = await this.clientManager.getAuthToken(clusterName);
-            if (!token) {
-                return discoveredTenants;
-            }
-
-            // Extract potential tenant names from the token
-            const tenantInfo = extractTenantInfo(token);
-            if (tenantInfo.possibleTenants.length === 0) {
-                return discoveredTenants;
-            }
-
-            this.logger.info(`Extracted ${tenantInfo.possibleTenants.length} potential tenant(s) from token: ${tenantInfo.possibleTenants.join(', ')}`);
-
-            // Try to list namespaces for each potential tenant
-            for (const tenant of tenantInfo.possibleTenants) {
-                try {
-                    const namespaces = await this.clientManager.getNamespaces(clusterName, tenant);
-                    if (namespaces.length > 0) {
-                        this.logger.info(`Found ${namespaces.length} namespace(s) for tenant "${tenant}"`);
-                        discoveredTenants.push(tenant);
-
-                        // Auto-add discovered namespaces to manual configuration
-                        for (const ns of namespaces) {
-                            const namespacePath = `${tenant}/${ns}`;
-                            await this.clientManager.addManualNamespace(clusterName, namespacePath);
-                        }
-                    }
-                } catch (error: any) {
-                    // This tenant doesn't work, try the next one
-                    this.logger.debug(`Cannot access tenant "${tenant}": ${error?.message || 'Unknown error'}`);
-                }
-            }
-        } catch (error: any) {
-            this.logger.debug(`Failed to discover tenants from token: ${error?.message || 'Unknown error'}`);
-        }
-
-        return discoveredTenants;
     }
 }
