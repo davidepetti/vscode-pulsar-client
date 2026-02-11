@@ -45,6 +45,7 @@ export class MessageConsumerWebview {
     private namespace: string = '';
     private topicName: string = '';
     private messages: PulsarMessage[] = [];
+    private compiledKeyFilterRegex: RegExp | undefined;
 
     private constructor(private clientManager: PulsarClientManager) {}
 
@@ -147,9 +148,6 @@ export class MessageConsumerWebview {
                             redeliveryCount: response.redeliveryCount
                         };
 
-                        // Check if message matches key filter
-                        const matchesFilter = this.matchesKeyFilter(message.key);
-
                         this.messages.unshift(message);
                         // Keep only last 100 messages
                         if (this.messages.length > 100) {
@@ -157,11 +155,17 @@ export class MessageConsumerWebview {
                         }
 
                         this.consumerState.messageCount++;
+
+                        // Check if message matches key filter (only relevant when filter is active)
+                        const hasActiveFilter = !!this.consumerState.keyFilter;
+                        const matchesFilter = hasActiveFilter && this.matchesKeyFilter(message.key);
+                        const shouldHide = hasActiveFilter && !matchesFilter;
+
                         this.postMessage({
                             command: 'messageReceived',
                             message,
                             count: this.consumerState.messageCount,
-                            matchesFilter
+                            shouldHide
                         });
 
                         // Send acknowledgment
@@ -234,9 +238,9 @@ export class MessageConsumerWebview {
     }
 
     private matchesKeyFilter(messageKey: string | undefined): boolean {
-        // If no filter is set, all messages match
+        // If no filter is set, return false (no messages should be highlighted/hidden)
         if (!this.consumerState.keyFilter) {
-            return true;
+            return false;
         }
 
         // If message has no key and filter is set, it doesn't match
@@ -247,15 +251,11 @@ export class MessageConsumerWebview {
         if (this.consumerState.keyFilterMode === 'exact') {
             return messageKey === this.consumerState.keyFilter;
         } else {
-            // Regex mode
-            try {
-                const regex = new RegExp(this.consumerState.keyFilter);
-                return regex.test(messageKey);
-            } catch (e) {
-                // Invalid regex, treat as no match
-                this.logger.warn(`Invalid regex pattern: ${this.consumerState.keyFilter}`);
+            // Regex mode - use pre-compiled regex
+            if (!this.compiledKeyFilterRegex) {
                 return false;
             }
+            return this.compiledKeyFilterRegex.test(messageKey);
         }
     }
 
@@ -294,7 +294,21 @@ export class MessageConsumerWebview {
                 this.consumerState.keyFilter = message.keyFilter || '';
                 this.consumerState.keyFilterMode = message.keyFilterMode || 'exact';
                 this.consumerState.autoStopOnMatch = message.autoStopOnMatch || false;
-                this.logger.info(`Key filter updated: ${this.consumerState.keyFilter} (mode: ${this.consumerState.keyFilterMode}, autoStop: ${this.consumerState.autoStopOnMatch})`);
+
+                // Pre-compile regex if in regex mode
+                if (this.consumerState.keyFilter && this.consumerState.keyFilterMode === 'regex') {
+                    try {
+                        this.compiledKeyFilterRegex = new RegExp(this.consumerState.keyFilter);
+                        this.logger.info(`Key filter updated: ${this.consumerState.keyFilter} (mode: ${this.consumerState.keyFilterMode}, autoStop: ${this.consumerState.autoStopOnMatch})`);
+                    } catch (e) {
+                        this.logger.warn(`Invalid regex pattern: ${this.consumerState.keyFilter}`, e);
+                        this.compiledKeyFilterRegex = undefined;
+                        this.consumerState.keyFilter = ''; // Clear invalid filter
+                    }
+                } else {
+                    this.compiledKeyFilterRegex = undefined;
+                    this.logger.info(`Key filter updated: ${this.consumerState.keyFilter} (mode: ${this.consumerState.keyFilterMode}, autoStop: ${this.consumerState.autoStopOnMatch})`);
+                }
                 break;
         }
     }
@@ -477,13 +491,8 @@ export class MessageConsumerWebview {
         .message-item:hover {
             background: var(--vscode-list-hoverBackground);
         }
-        .message-item.filter-match {
-            border-left: 4px solid var(--vscode-textLink-activeForeground);
-            background: var(--vscode-list-activeSelectionBackground);
-        }
-        .message-item.filter-match .message-key {
-            font-weight: bold;
-            color: var(--vscode-textLink-activeForeground);
+        .message-item.filter-hidden {
+            display: none;
         }
         .message-header {
             display: flex;
@@ -793,7 +802,7 @@ export class MessageConsumerWebview {
             }
         }
 
-        function addMessage(message, matchesFilter) {
+        function addMessage(message, shouldHide) {
             const list = document.getElementById('messageList');
             const emptyState = document.getElementById('emptyState');
             if (emptyState) {
@@ -802,8 +811,8 @@ export class MessageConsumerWebview {
 
             const item = document.createElement('div');
             item.className = 'message-item';
-            if (matchesFilter) {
-                item.classList.add('filter-match');
+            if (shouldHide) {
+                item.classList.add('filter-hidden');
             }
 
             let propertiesHtml = '';
@@ -916,7 +925,7 @@ export class MessageConsumerWebview {
                     addLog('Disconnected', 'info');
                     break;
                 case 'messageReceived':
-                    addMessage(message.message, message.matchesFilter);
+                    addMessage(message.message, message.shouldHide);
                     document.getElementById('messageCount').textContent = message.count;
                     break;
                 case 'autoStopped':
