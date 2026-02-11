@@ -57,4 +57,4 @@ jobs:
             - Add "bug" label if it's a bug report
             - Add "enhancement" label if it's a feature request
             - Add "good first issue" label if complexity is trivial
-          claude_args: '--max-turns 10 --model claude-sonnet-4-5-20250929 --allowedTools "Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label create:*)"'
+          claude_args: '--max-turns 10 --model claude-sonnet-4-5-20250929 --allowedTools "Bash(gh:*)"'
