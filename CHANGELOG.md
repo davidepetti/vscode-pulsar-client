@@ -5,7 +5,7 @@ All notable changes to the Pulsar Client for VSCode extension will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-02-11
 
 ### Added
 - Configuration export and import functionality
@@ -17,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Shareable configurations for team onboarding
 - Message key filtering in Message Consumer
   - Filter messages by key with exact match or regex pattern
-  - Visual highlighting of messages that match the filter
+  - Hide non-matching messages when filter is active
   - Auto-stop option to disconnect once a matching message is found
+
+### Fixed
+- WebSocket connections now pass authentication token for authenticated clusters
+- Warning when configuring a remote cluster with HTTP instead of HTTPS
 
 ## [0.1.8] - 2026-01-23
 
