@@ -188,6 +188,16 @@
         "command": "pulsar.showBrokerDetails",
         "title": "Show Broker Details",
         "icon": "$(info)"
+      },
+      {
+        "command": "pulsar.exportConfiguration",
+        "title": "Pulsar: Export Configuration",
+        "icon": "$(export)"
+      },
+      {
+        "command": "pulsar.importConfiguration",
+        "title": "Pulsar: Import Configuration",
+        "icon": "$(cloud-download)"
       }
     ],
     "menus": {
@@ -206,6 +216,16 @@
           "command": "pulsar.refreshCluster",
           "when": "view == pulsarExplorer",
           "group": "navigation@3"
+        },
+        {
+          "command": "pulsar.exportConfiguration",
+          "when": "view == pulsarExplorer",
+          "group": "2_config@1"
+        },
+        {
+          "command": "pulsar.importConfiguration",
+          "when": "view == pulsarExplorer",
+          "group": "2_config@2"
         },
         {
           "command": "pulsar.findSubscription",

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Configuration export and import functionality
+  - Export cluster connections, manual namespaces, and extension settings to JSON files
+  - Selective export: choose what to export (clusters, namespaces, settings)
+  - Sensitive data handling: exclude, mask, or include authentication tokens
+  - Environment variable support: use `${PULSAR_TOKEN}` placeholders in imported configs
+  - Import merge strategies: overwrite, append, or skip existing clusters
+  - Shareable configurations for team onboarding
 - Message key filtering in Message Consumer
   - Filter messages by key with exact match or regex pattern
   - Visual highlighting of messages that match the filter
