@@ -5,6 +5,14 @@ All notable changes to the Pulsar Client for VSCode extension will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Message key filtering in Message Consumer
+  - Filter messages by key with exact match or regex pattern
+  - Visual highlighting of messages that match the filter
+  - Auto-stop option to disconnect once a matching message is found
+
 ## [0.1.8] - 2026-01-23
 
 ### Fixed

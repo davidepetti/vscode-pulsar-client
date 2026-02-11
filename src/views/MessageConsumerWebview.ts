@@ -8,6 +8,9 @@ interface ConsumerState {
     isConnected: boolean;
     isPaused: boolean;
     subscription: string;
+    keyFilter: string;
+    keyFilterMode: 'exact' | 'regex';
+    autoStopOnMatch: boolean;
 }
 
 interface PulsarMessage {
@@ -31,7 +34,10 @@ export class MessageConsumerWebview {
         messageCount: 0,
         isConnected: false,
         isPaused: false,
-        subscription: ''
+        subscription: '',
+        keyFilter: '',
+        keyFilterMode: 'exact',
+        autoStopOnMatch: false
     };
 
     private clusterName: string = '';
@@ -39,6 +45,7 @@ export class MessageConsumerWebview {
     private namespace: string = '';
     private topicName: string = '';
     private messages: PulsarMessage[] = [];
+    private compiledKeyFilterRegex: RegExp | undefined;
 
     private constructor(private clientManager: PulsarClientManager) {}
 
@@ -59,7 +66,10 @@ export class MessageConsumerWebview {
             messageCount: 0,
             isConnected: false,
             isPaused: false,
-            subscription: ''
+            subscription: '',
+            keyFilter: '',
+            keyFilterMode: 'exact',
+            autoStopOnMatch: false
         };
 
         // Close existing WebSocket if any
@@ -145,14 +155,31 @@ export class MessageConsumerWebview {
                         }
 
                         this.consumerState.messageCount++;
+
+                        // Check if message matches key filter (only relevant when filter is active)
+                        const hasActiveFilter = !!this.consumerState.keyFilter;
+                        const matchesFilter = hasActiveFilter && this.matchesKeyFilter(message.key);
+                        const shouldHide = hasActiveFilter && !matchesFilter;
+
                         this.postMessage({
                             command: 'messageReceived',
                             message,
-                            count: this.consumerState.messageCount
+                            count: this.consumerState.messageCount,
+                            shouldHide
                         });
 
                         // Send acknowledgment
                         this.acknowledgeMessage(response.messageId);
+
+                        // Auto-stop if match found and auto-stop is enabled
+                        if (matchesFilter && this.consumerState.autoStopOnMatch) {
+                            this.logger.info('Key filter match found, auto-stopping consumer');
+                            this.postMessage({
+                                command: 'autoStopped',
+                                message: `Found matching message with key: ${message.key || '(no key)'}`
+                            });
+                            this.closeWebSocket();
+                        }
                     } else if (response.result === 'ok') {
                         // Acknowledgment response
                         this.logger.debug('Message acknowledged');
@@ -210,6 +237,28 @@ export class MessageConsumerWebview {
         }
     }
 
+    private matchesKeyFilter(messageKey: string | undefined): boolean {
+        // If no filter is set, return false (no messages should be highlighted/hidden)
+        if (!this.consumerState.keyFilter) {
+            return false;
+        }
+
+        // If message has no key and filter is set, it doesn't match
+        if (!messageKey) {
+            return false;
+        }
+
+        if (this.consumerState.keyFilterMode === 'exact') {
+            return messageKey === this.consumerState.keyFilter;
+        } else {
+            // Regex mode - use pre-compiled regex
+            if (!this.compiledKeyFilterRegex) {
+                return false;
+            }
+            return this.compiledKeyFilterRegex.test(messageKey);
+        }
+    }
+
     private acknowledgeMessage(messageId: string): void {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ messageId }));
@@ -240,6 +289,26 @@ export class MessageConsumerWebview {
                 break;
             case 'exportMessages':
                 await this.exportMessages(message.messages);
+                break;
+            case 'setKeyFilter':
+                this.consumerState.keyFilter = message.keyFilter || '';
+                this.consumerState.keyFilterMode = message.keyFilterMode || 'exact';
+                this.consumerState.autoStopOnMatch = message.autoStopOnMatch || false;
+
+                // Pre-compile regex if in regex mode
+                if (this.consumerState.keyFilter && this.consumerState.keyFilterMode === 'regex') {
+                    try {
+                        this.compiledKeyFilterRegex = new RegExp(this.consumerState.keyFilter);
+                        this.logger.info(`Key filter updated: ${this.consumerState.keyFilter} (mode: ${this.consumerState.keyFilterMode}, autoStop: ${this.consumerState.autoStopOnMatch})`);
+                    } catch (e) {
+                        this.logger.warn(`Invalid regex pattern: ${this.consumerState.keyFilter}`, e);
+                        this.compiledKeyFilterRegex = undefined;
+                        this.consumerState.keyFilter = ''; // Clear invalid filter
+                    }
+                } else {
+                    this.compiledKeyFilterRegex = undefined;
+                    this.logger.info(`Key filter updated: ${this.consumerState.keyFilter} (mode: ${this.consumerState.keyFilterMode}, autoStop: ${this.consumerState.autoStopOnMatch})`);
+                }
                 break;
         }
     }
@@ -422,6 +491,9 @@ export class MessageConsumerWebview {
         .message-item:hover {
             background: var(--vscode-list-hoverBackground);
         }
+        .message-item.filter-hidden {
+            display: none;
+        }
         .message-header {
             display: flex;
             justify-content: space-between;
@@ -544,6 +616,23 @@ export class MessageConsumerWebview {
                 <option value="earliest">Earliest (all messages)</option>
             </select>
         </div>
+        <div class="form-row" style="margin-top: 10px;">
+            <label for="keyFilter">Filter by key:</label>
+            <input type="text" id="keyFilter" placeholder="Enter key or pattern..." style="flex: 1; padding: 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 4px;">
+        </div>
+        <div class="form-row" style="margin-top: 10px;">
+            <label for="keyFilterMode">Match mode:</label>
+            <select id="keyFilterMode" style="flex: 1; padding: 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 4px;">
+                <option value="exact">Exact match</option>
+                <option value="regex">Regex pattern</option>
+            </select>
+        </div>
+        <div class="form-row" style="margin-top: 10px;">
+            <label style="display: flex; align-items: center; cursor: pointer;">
+                <input type="checkbox" id="autoStopOnMatch" style="margin-right: 8px;">
+                <span>Auto-stop when matching message is found</span>
+            </label>
+        </div>
         <div class="button-row">
             <button class="primary" id="connectButton" onclick="connect()">Start Consuming</button>
             <button class="danger" id="disconnectButton" onclick="disconnect()" style="display: none;">Stop</button>
@@ -599,6 +688,9 @@ export class MessageConsumerWebview {
             const disconnectBtn = document.getElementById('disconnectButton');
             const subInput = document.getElementById('subscriptionName');
             const posSelect = document.getElementById('initialPosition');
+            const keyFilterInput = document.getElementById('keyFilter');
+            const keyFilterModeSelect = document.getElementById('keyFilterMode');
+            const autoStopCheckbox = document.getElementById('autoStopOnMatch');
             const subInfo = document.getElementById('subscriptionInfo');
             const currentSub = document.getElementById('currentSubscription');
 
@@ -609,6 +701,9 @@ export class MessageConsumerWebview {
                 disconnectBtn.style.display = 'inline-block';
                 subInput.disabled = true;
                 posSelect.disabled = true;
+                keyFilterInput.disabled = true;
+                keyFilterModeSelect.disabled = true;
+                autoStopCheckbox.disabled = true;
                 subInfo.style.display = 'flex';
                 currentSub.textContent = subscription;
             } else {
@@ -618,6 +713,9 @@ export class MessageConsumerWebview {
                 disconnectBtn.style.display = 'none';
                 subInput.disabled = false;
                 posSelect.disabled = false;
+                keyFilterInput.disabled = false;
+                keyFilterModeSelect.disabled = false;
+                autoStopCheckbox.disabled = false;
                 subInfo.style.display = 'none';
             }
         }
@@ -625,11 +723,32 @@ export class MessageConsumerWebview {
         function connect() {
             const subscription = document.getElementById('subscriptionName').value.trim();
             const position = document.getElementById('initialPosition').value;
+            const keyFilter = document.getElementById('keyFilter').value.trim();
+            const keyFilterMode = document.getElementById('keyFilterMode').value;
+            const autoStopOnMatch = document.getElementById('autoStopOnMatch').checked;
+
             if (!subscription) {
                 addLog('Please enter a subscription name', 'error');
                 return;
             }
-            addLog('Connecting to subscription: ' + subscription + ' (position: ' + position + ')', 'info');
+
+            // Send filter settings to backend
+            vscode.postMessage({
+                command: 'setKeyFilter',
+                keyFilter,
+                keyFilterMode,
+                autoStopOnMatch
+            });
+
+            let logMsg = 'Connecting to subscription: ' + subscription + ' (position: ' + position + ')';
+            if (keyFilter) {
+                logMsg += ', key filter: ' + keyFilter + ' (' + keyFilterMode + ')';
+                if (autoStopOnMatch) {
+                    logMsg += ', auto-stop enabled';
+                }
+            }
+            addLog(logMsg, 'info');
+
             vscode.postMessage({ command: 'connect', subscription, position });
         }
 
@@ -683,7 +802,7 @@ export class MessageConsumerWebview {
             }
         }
 
-        function addMessage(message) {
+        function addMessage(message, shouldHide) {
             const list = document.getElementById('messageList');
             const emptyState = document.getElementById('emptyState');
             if (emptyState) {
@@ -692,6 +811,9 @@ export class MessageConsumerWebview {
 
             const item = document.createElement('div');
             item.className = 'message-item';
+            if (shouldHide) {
+                item.classList.add('filter-hidden');
+            }
 
             let propertiesHtml = '';
             if (message.properties && Object.keys(message.properties).length > 0) {
@@ -803,8 +925,12 @@ export class MessageConsumerWebview {
                     addLog('Disconnected', 'info');
                     break;
                 case 'messageReceived':
-                    addMessage(message.message);
+                    addMessage(message.message, message.shouldHide);
                     document.getElementById('messageCount').textContent = message.count;
+                    break;
+                case 'autoStopped':
+                    addLog(message.message, 'success');
+                    updateConnectionStatus(false);
                     break;
                 case 'error':
                     addLog(message.message, 'error');
