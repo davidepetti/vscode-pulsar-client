@@ -110,7 +110,11 @@ export class MessageConsumerWebview {
         this.logger.info(`Connecting to WebSocket: ${wsUrl}`);
 
         try {
-            this.ws = new WebSocket(wsUrl);
+            const wsOptions: WebSocket.ClientOptions = {};
+            if (connection.authToken) {
+                wsOptions.headers = { 'Authorization': `Bearer ${connection.authToken}` };
+            }
+            this.ws = new WebSocket(wsUrl, wsOptions);
 
             this.ws.on('open', () => {
                 this.logger.info('Consumer WebSocket connected');

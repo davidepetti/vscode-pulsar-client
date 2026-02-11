@@ -50,7 +50,10 @@ export async function addCluster(
                     return 'Web service URL is required';
                 }
                 try {
-                    new URL(value);
+                    const url = new URL(value);
+                    if (url.protocol === 'http:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+                        return 'Warning: Using HTTP for remote clusters is insecure. Use HTTPS to protect authentication tokens.';
+                    }
                     return undefined;
                 } catch {
                     return 'Invalid URL format';
