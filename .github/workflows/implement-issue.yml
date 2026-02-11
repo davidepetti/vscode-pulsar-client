@@ -66,4 +66,4 @@ jobs:
             requires external services, or is beyond reasonable scope), post a comment
             on the issue explaining what blockers you encountered instead of creating
             a broken PR.
-          claude_args: '--max-turns 30 --model claude-sonnet-4-5-20250929 --allowedTools "Edit,Write,Bash(gh:*),Bash(npm run compile:*),Bash(npm run bundle:*),Bash(git:*)"'
+          claude_args: '--max-turns 50 --model claude-sonnet-4-5-20250929 --allowedTools "Edit,Write,Bash(gh:*),Bash(npm run compile:*),Bash(npm run bundle:*),Bash(git:*)"'
