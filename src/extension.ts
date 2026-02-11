@@ -13,6 +13,7 @@ import * as tenantCommands from './commands/tenantCommands';
 import * as namespaceCommands from './commands/namespaceCommands';
 import * as topicCommands from './commands/topicCommands';
 import * as subscriptionCommands from './commands/subscriptionCommands';
+import * as configCommands from './commands/configCommands';
 
 // Types
 import { ClusterNode, TenantNode, NamespaceNode, TopicNode, SubscriptionNode } from './types/nodes';
@@ -144,6 +145,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('pulsar.testConnection', (node?: ClusterNode) =>
             clusterCommands.testConnection(clientManager, node)
         ),
+
+        // Configuration commands
+        vscode.commands.registerCommand('pulsar.exportConfiguration', () =>
+            configCommands.exportConfiguration(clientManager, credentialManager)
+        ),
+        vscode.commands.registerCommand('pulsar.importConfiguration', async () => {
+            await configCommands.importConfiguration(
+                clientManager,
+                pulsarExplorerProvider,
+                subscriptionProvider,
+                brokerProvider,
+                credentialManager
+            );
+            updateStatusBar();
+        }),
 
         // Tenant commands
         vscode.commands.registerCommand('pulsar.createTenant', (node: ClusterNode) =>
