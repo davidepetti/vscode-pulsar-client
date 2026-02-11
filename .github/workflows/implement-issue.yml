@@ -1,0 +1,68 @@
+name: Implement Issue
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  implement:
+    if: |
+      contains(github.event.comment.body, '/implement') &&
+      !github.event.issue.pull_request &&
+      (
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR'
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Implement with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are implementing a fix/feature for the vscode-pulsar-client VS Code extension.
+            Read the CLAUDE.md file for full project context.
+
+            Your task: Implement the changes described in issue #${{ github.event.issue.number }}.
+            Read the issue description AND all comments (especially the triage analysis comment)
+            to understand what needs to be done.
+
+            Implementation rules:
+            1. Follow ALL patterns described in CLAUDE.md
+            2. Do NOT modify package.json version number
+            3. Do NOT run `npm run lint` (it is currently broken)
+            4. After making changes, run `npm run compile` to verify TypeScript compiles cleanly
+            5. Run `npm run bundle` to verify esbuild bundling works
+            6. If compile or bundle fails, fix the errors before finishing
+            7. Add an entry to CHANGELOG.md under a new [Unreleased] section at the top
+            8. Keep changes focused on the issue scope
+
+            When done, create a pull request that:
+            - References the issue with "Closes #${{ github.event.issue.number }}"
+            - Has a clear title summarizing the change
+            - Has a description explaining what was changed and why
+
+            If you cannot complete the implementation (e.g., the issue is too vague,
+            requires external services, or is beyond reasonable scope), post a comment
+            on the issue explaining what blockers you encountered instead of creating
+            a broken PR.
+          claude_args: "--max-turns 30 --model claude-sonnet-4-5-20250929"

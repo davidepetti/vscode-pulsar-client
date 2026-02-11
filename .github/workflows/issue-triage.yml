@@ -1,0 +1,59 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Triage with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are triaging a new GitHub issue for the vscode-pulsar-client VS Code extension.
+            Read the CLAUDE.md file for full project context.
+
+            Analyze this issue and post a structured comment with the following sections:
+
+            ## Issue Analysis
+
+            ### Summary
+            A 2-3 sentence summary of what the issue is requesting or reporting.
+
+            ### Classification
+            - **Type**: bug | enhancement | question | documentation
+            - **Complexity**: trivial (< 1 hour) | small (1-4 hours) | medium (4-16 hours) | large (> 16 hours)
+            - **Priority**: low | medium | high | critical
+
+            ### Affected Areas
+            List the specific source files and directories that would need changes.
+            Be precise - reference actual file paths from the codebase.
+
+            ### Implementation Plan
+            A numbered list of concrete steps to implement this. Include:
+            - Which files to create or modify
+            - What patterns to follow (reference existing code)
+            - Any new dependencies or package.json changes needed
+
+            ### Verification
+            How to verify the implementation works (manual testing steps).
+
+            ---
+            *Comment `/implement` to have me create a PR for this issue.*
+
+            After posting the analysis, add appropriate labels to the issue:
+            - Add "bug" label if it's a bug report
+            - Add "enhancement" label if it's a feature request
+            - Add "good first issue" label if complexity is trivial
+          claude_args: "--max-turns 10 --model claude-sonnet-4-5-20250929"
