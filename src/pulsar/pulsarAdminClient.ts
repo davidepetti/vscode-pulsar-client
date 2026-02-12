@@ -161,6 +161,25 @@ export class PulsarAdminClient {
     }
 
     /**
+     * Check if a topic is partitioned and get partition count
+     * Returns 0 for non-partitioned topics, N for partitioned topics with N partitions
+     */
+    async getPartitionCount(tenant: string, namespace: string, topicName: string): Promise<number> {
+        try {
+            const metadata = await this.get<PartitionedTopicMetadata>(
+                `/admin/v2/persistent/${encodeURIComponent(tenant)}/${encodeURIComponent(namespace)}/${encodeURIComponent(topicName)}/partitions`
+            );
+            return metadata.partitions || 0;
+        } catch (error: any) {
+            // If 404, it's a non-partitioned topic
+            if (error?.status === 404 || error?.statusCode === 404) {
+                return 0;
+            }
+            throw error;
+        }
+    }
+
+    /**
      * Get topic statistics
      */
     async getTopicStats(topic: string): Promise<TopicStats> {

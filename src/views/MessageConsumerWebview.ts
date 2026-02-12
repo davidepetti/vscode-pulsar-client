@@ -20,6 +20,7 @@ interface PulsarMessage {
     properties: Record<string, string>;
     key?: string;
     redeliveryCount?: number;
+    partition?: number;
 }
 
 /**
@@ -30,6 +31,8 @@ export class MessageConsumerWebview {
     private panel: vscode.WebviewPanel | undefined;
     private logger = Logger.getLogger('MessageConsumerWebview');
     private ws: WebSocket | undefined;
+    private wsConnections: Map<number, WebSocket> = new Map();
+    private partitionCount: number = 0;
     private consumerState: ConsumerState = {
         messageCount: 0,
         isConnected: false,
@@ -111,107 +114,18 @@ export class MessageConsumerWebview {
 
         this.consumerState.subscription = subscription;
 
-        // Build WebSocket URL with initial position
-        // Format: ws://host:port/ws/v2/consumer/persistent/tenant/namespace/topic/subscription?subscriptionType=Exclusive&initialPosition=Latest
-        const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
-        const initialPosition = position === 'earliest' ? 'Earliest' : 'Latest';
-        const wsUrl = `${baseUrl}/ws/v2/consumer/persistent/${this.tenant}/${this.namespace}/${this.topicName}/${subscription}?initialPosition=${initialPosition}`;
-
-        this.logger.info(`Connecting to WebSocket: ${wsUrl}`);
-
         try {
-            const wsOptions: WebSocket.ClientOptions = {};
-            if (connection.authToken) {
-                wsOptions.headers = { 'Authorization': `Bearer ${connection.authToken}` };
+            // Check if topic is partitioned
+            this.partitionCount = await this.clientManager.getPartitionCount(this.clusterName, this.tenant, this.namespace, this.topicName);
+
+            if (this.partitionCount > 0) {
+                // Partitioned topic - connect to all partitions
+                this.logger.info(`Topic has ${this.partitionCount} partitions, connecting to all...`);
+                await this.connectToPartitions(subscription, position, connection, this.partitionCount);
+            } else {
+                // Non-partitioned topic - connect normally
+                await this.connectToSingleTopic(subscription, position, connection);
             }
-            this.ws = new WebSocket(wsUrl, wsOptions);
-
-            this.ws.on('open', () => {
-                this.logger.info('Consumer WebSocket connected');
-                this.consumerState.isConnected = true;
-                this.postMessage({ command: 'connected', subscription });
-                this.updateStatus();
-            });
-
-            this.ws.on('message', (data) => {
-                try {
-                    const response = JSON.parse(data.toString());
-
-                    if (response.messageId) {
-                        // This is a message
-                        const message: PulsarMessage = {
-                            messageId: response.messageId,
-                            payload: this.decodePayload(response.payload),
-                            publishTime: response.publishTime || new Date().toISOString(),
-                            properties: response.properties || {},
-                            key: response.key,
-                            redeliveryCount: response.redeliveryCount
-                        };
-
-                        this.messages.unshift(message);
-                        // Keep only last 100 messages
-                        if (this.messages.length > 100) {
-                            this.messages.pop();
-                        }
-
-                        this.consumerState.messageCount++;
-
-                        // Check if message matches key filter (only relevant when filter is active)
-                        const hasActiveFilter = !!this.consumerState.keyFilter;
-                        const matchesFilter = hasActiveFilter && this.matchesKeyFilter(message.key);
-                        const shouldHide = hasActiveFilter && !matchesFilter;
-
-                        this.postMessage({
-                            command: 'messageReceived',
-                            message,
-                            count: this.consumerState.messageCount,
-                            shouldHide
-                        });
-
-                        // Send acknowledgment
-                        this.acknowledgeMessage(response.messageId);
-
-                        // Auto-stop if match found and auto-stop is enabled
-                        if (matchesFilter && this.consumerState.autoStopOnMatch) {
-                            this.logger.info('Key filter match found, auto-stopping consumer');
-                            this.postMessage({
-                                command: 'autoStopped',
-                                message: `Found matching message with key: ${message.key || '(no key)'}`
-                            });
-                            this.closeWebSocket();
-                        }
-                    } else if (response.result === 'ok') {
-                        // Acknowledgment response
-                        this.logger.debug('Message acknowledged');
-                    } else if (response.errorMsg) {
-                        this.postMessage({
-                            command: 'error',
-                            message: response.errorMsg
-                        });
-                    }
-                    this.updateStatus();
-                } catch (e) {
-                    this.logger.error('Failed to parse WebSocket message', e);
-                }
-            });
-
-            this.ws.on('error', (error) => {
-                this.logger.error('WebSocket error', error);
-                this.consumerState.isConnected = false;
-                this.postMessage({
-                    command: 'error',
-                    message: `WebSocket error: ${error.message}`
-                });
-                this.updateStatus();
-            });
-
-            this.ws.on('close', () => {
-                this.logger.info('WebSocket closed');
-                this.consumerState.isConnected = false;
-                this.postMessage({ command: 'disconnected' });
-                this.updateStatus();
-            });
-
         } catch (error: any) {
             this.logger.error('Failed to connect WebSocket', error);
             this.postMessage({
@@ -219,6 +133,157 @@ export class MessageConsumerWebview {
                 message: `Failed to connect: ${error.message}`
             });
         }
+    }
+
+    private async connectToSingleTopic(
+        subscription: string,
+        position: 'latest' | 'earliest',
+        connection: any
+    ): Promise<void> {
+        const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
+        const initialPosition = position === 'earliest' ? 'Earliest' : 'Latest';
+        const wsUrl = `${baseUrl}/ws/v2/consumer/persistent/${this.tenant}/${this.namespace}/${this.topicName}/${subscription}?initialPosition=${initialPosition}`;
+
+        this.logger.info(`Connecting to WebSocket: ${wsUrl}`);
+
+        const wsOptions: WebSocket.ClientOptions = {};
+        if (connection.authToken) {
+            wsOptions.headers = { 'Authorization': `Bearer ${connection.authToken}` };
+        }
+        this.ws = new WebSocket(wsUrl, wsOptions);
+
+        this.setupWebSocketHandlers(this.ws, subscription, undefined);
+    }
+
+    private async connectToPartitions(
+        subscription: string,
+        position: 'latest' | 'earliest',
+        connection: any,
+        partitionCount: number
+    ): Promise<void> {
+        const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
+        const initialPosition = position === 'earliest' ? 'Earliest' : 'Latest';
+        const wsOptions: WebSocket.ClientOptions = {};
+        if (connection.authToken) {
+            wsOptions.headers = { 'Authorization': `Bearer ${connection.authToken}` };
+        }
+
+        // Connect to all partitions
+        for (let partition = 0; partition < partitionCount; partition++) {
+            const partitionTopicName = `${this.topicName}-partition-${partition}`;
+            const wsUrl = `${baseUrl}/ws/v2/consumer/persistent/${this.tenant}/${this.namespace}/${partitionTopicName}/${subscription}?initialPosition=${initialPosition}`;
+
+            this.logger.info(`Connecting to partition ${partition}: ${wsUrl}`);
+
+            const ws = new WebSocket(wsUrl, wsOptions);
+            this.wsConnections.set(partition, ws);
+            this.setupWebSocketHandlers(ws, subscription, partition);
+        }
+
+        // Mark as connected once first partition connects
+        this.consumerState.isConnected = true;
+    }
+
+    private setupWebSocketHandlers(ws: WebSocket, subscription: string, partition: number | undefined): void {
+        const partitionLabel = partition !== undefined ? ` (partition ${partition})` : '';
+
+        ws.on('open', () => {
+            this.logger.info(`Consumer WebSocket connected${partitionLabel}`);
+            if (!this.consumerState.isConnected) {
+                this.consumerState.isConnected = true;
+                this.postMessage({ command: 'connected', subscription });
+                this.updateStatus();
+            }
+        });
+
+        ws.on('message', (data) => {
+            try {
+                const response = JSON.parse(data.toString());
+
+                if (response.messageId) {
+                    // This is a message
+                    const message: PulsarMessage = {
+                        messageId: response.messageId,
+                        payload: this.decodePayload(response.payload),
+                        publishTime: response.publishTime || new Date().toISOString(),
+                        properties: response.properties || {},
+                        key: response.key,
+                        redeliveryCount: response.redeliveryCount,
+                        partition
+                    };
+
+                    this.messages.unshift(message);
+                    // Keep only last 100 messages
+                    if (this.messages.length > 100) {
+                        this.messages.pop();
+                    }
+
+                    this.consumerState.messageCount++;
+
+                    // Check if message matches key filter (only relevant when filter is active)
+                    const hasActiveFilter = !!this.consumerState.keyFilter;
+                    const matchesFilter = hasActiveFilter && this.matchesKeyFilter(message.key);
+                    const shouldHide = hasActiveFilter && !matchesFilter;
+
+                    this.postMessage({
+                        command: 'messageReceived',
+                        message,
+                        count: this.consumerState.messageCount,
+                        shouldHide
+                    });
+
+                    // Send acknowledgment
+                    this.acknowledgeMessage(response.messageId, ws);
+
+                    // Auto-stop if match found and auto-stop is enabled
+                    if (matchesFilter && this.consumerState.autoStopOnMatch) {
+                        this.logger.info('Key filter match found, auto-stopping consumer');
+                        this.postMessage({
+                            command: 'autoStopped',
+                            message: `Found matching message with key: ${message.key || '(no key)'}`
+                        });
+                        this.closeWebSocket();
+                    }
+                } else if (response.result === 'ok') {
+                    // Acknowledgment response
+                    this.logger.debug('Message acknowledged');
+                } else if (response.errorMsg) {
+                    this.postMessage({
+                        command: 'error',
+                        message: `${response.errorMsg}${partitionLabel}`
+                    });
+                }
+                this.updateStatus();
+            } catch (e) {
+                this.logger.error('Failed to parse WebSocket message', e);
+            }
+        });
+
+        ws.on('error', (error) => {
+            this.logger.error(`WebSocket error${partitionLabel}`, error);
+            this.postMessage({
+                command: 'error',
+                message: `WebSocket error${partitionLabel}: ${error.message}`
+            });
+            // Only mark as disconnected if all connections are down
+            if (this.wsConnections.size === 0 && !this.ws) {
+                this.consumerState.isConnected = false;
+                this.updateStatus();
+            }
+        });
+
+        ws.on('close', () => {
+            this.logger.info(`WebSocket closed${partitionLabel}`);
+            if (partition !== undefined) {
+                this.wsConnections.delete(partition);
+            }
+            // Only mark as disconnected if all connections are down
+            if (this.wsConnections.size === 0 && !this.ws) {
+                this.consumerState.isConnected = false;
+                this.postMessage({ command: 'disconnected' });
+                this.updateStatus();
+            }
+        });
     }
 
     private decodePayload(payload: string): string {
@@ -259,9 +324,10 @@ export class MessageConsumerWebview {
         }
     }
 
-    private acknowledgeMessage(messageId: string): void {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ messageId }));
+    private acknowledgeMessage(messageId: string, ws?: WebSocket): void {
+        const targetWs = ws || this.ws;
+        if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+            targetWs.send(JSON.stringify({ messageId }));
         }
     }
 
@@ -270,6 +336,11 @@ export class MessageConsumerWebview {
             this.ws.close();
             this.ws = undefined;
         }
+        // Close all partition connections
+        for (const ws of this.wsConnections.values()) {
+            ws.close();
+        }
+        this.wsConnections.clear();
     }
 
     private async handleMessage(message: any): Promise<void> {
@@ -506,6 +577,10 @@ export class MessageConsumerWebview {
         }
         .message-key {
             color: var(--vscode-textLink-foreground);
+        }
+        .message-partition {
+            color: var(--vscode-charts-blue);
+            font-weight: 500;
         }
         .message-payload {
             font-family: monospace;
@@ -825,6 +900,7 @@ export class MessageConsumerWebview {
             }
 
             const keyHtml = message.key ? '<span class="message-key">Key: ' + escapeHtml(message.key) + '</span>' : '';
+            const partitionHtml = message.partition !== undefined ? '<span class="message-partition">Partition: ' + message.partition + '</span>' : '';
 
             const msgIndex = Date.now() + Math.random();
             item.setAttribute('data-payload', message.payload);
@@ -835,7 +911,10 @@ export class MessageConsumerWebview {
                     <span class="message-id">\${escapeHtml(message.messageId)}</span>
                     <span>\${new Date(message.publishTime).toLocaleString()}</span>
                 </div>
-                \${keyHtml}
+                <div style="display: flex; gap: 15px; margin-bottom: 5px;">
+                    \${keyHtml}
+                    \${partitionHtml}
+                </div>
                 <div class="message-payload">\${escapeHtml(message.payload)}</div>
                 \${propertiesHtml}
                 <div class="message-actions">

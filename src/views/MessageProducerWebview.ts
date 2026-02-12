@@ -18,6 +18,9 @@ export class MessageProducerWebview {
     private panel: vscode.WebviewPanel | undefined;
     private logger = Logger.getLogger('MessageProducerWebview');
     private ws: WebSocket | undefined;
+    private wsConnections: Map<number, WebSocket> = new Map();
+    private partitionCount: number = 0;
+    private currentPartitionIndex: number = 0;
     private producerState: ProducerState = {
         messageCount: 0,
         lastMessageTime: null,
@@ -96,69 +99,18 @@ export class MessageProducerWebview {
             return;
         }
 
-        // Build WebSocket URL
-        // Format: ws://host:port/ws/v2/producer/persistent/tenant/namespace/topic
-        const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
-        const wsUrl = `${baseUrl}/ws/v2/producer/persistent/${this.tenant}/${this.namespace}/${this.topicName}`;
-
-        this.logger.info(`Connecting to WebSocket: ${wsUrl}`);
-
         try {
-            const wsOptions: WebSocket.ClientOptions = {};
-            if (connection.authToken) {
-                wsOptions.headers = { 'Authorization': `Bearer ${connection.authToken}` };
+            // Check if topic is partitioned
+            this.partitionCount = await this.clientManager.getPartitionCount(this.clusterName, this.tenant, this.namespace, this.topicName);
+
+            if (this.partitionCount > 0) {
+                // Partitioned topic - connect to all partitions
+                this.logger.info(`Topic has ${this.partitionCount} partitions, connecting to all...`);
+                await this.connectToPartitions(connection, this.partitionCount);
+            } else {
+                // Non-partitioned topic - connect normally
+                await this.connectToSingleTopic(connection);
             }
-            this.ws = new WebSocket(wsUrl, wsOptions);
-
-            this.ws.on('open', () => {
-                this.logger.info('WebSocket connected');
-                this.producerState.isConnected = true;
-                this.postMessage({ command: 'connected' });
-                this.updateStatus();
-            });
-
-            this.ws.on('message', (data) => {
-                try {
-                    const response = JSON.parse(data.toString());
-                    if (response.result === 'ok') {
-                        this.producerState.messageCount++;
-                        this.producerState.lastMessageTime = Date.now();
-                        this.postMessage({
-                            command: 'messageSent',
-                            messageId: response.messageId,
-                            count: this.producerState.messageCount
-                        });
-                    } else {
-                        this.producerState.errorCount++;
-                        this.postMessage({
-                            command: 'error',
-                            message: response.errorMsg || 'Unknown error'
-                        });
-                    }
-                    this.updateStatus();
-                } catch (e) {
-                    this.logger.error('Failed to parse WebSocket message', e);
-                }
-            });
-
-            this.ws.on('error', (error) => {
-                this.logger.error('WebSocket error', error);
-                this.producerState.isConnected = false;
-                this.producerState.errorCount++;
-                this.postMessage({
-                    command: 'error',
-                    message: `WebSocket error: ${error.message}`
-                });
-                this.updateStatus();
-            });
-
-            this.ws.on('close', () => {
-                this.logger.info('WebSocket closed');
-                this.producerState.isConnected = false;
-                this.postMessage({ command: 'disconnected' });
-                this.updateStatus();
-            });
-
         } catch (error: any) {
             this.logger.error('Failed to connect WebSocket', error);
             this.postMessage({
@@ -168,11 +120,121 @@ export class MessageProducerWebview {
         }
     }
 
+    private async connectToSingleTopic(connection: any): Promise<void> {
+        const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
+        const wsUrl = `${baseUrl}/ws/v2/producer/persistent/${this.tenant}/${this.namespace}/${this.topicName}`;
+
+        this.logger.info(`Connecting to WebSocket: ${wsUrl}`);
+
+        const wsOptions: WebSocket.ClientOptions = {};
+        if (connection.authToken) {
+            wsOptions.headers = { 'Authorization': `Bearer ${connection.authToken}` };
+        }
+        this.ws = new WebSocket(wsUrl, wsOptions);
+
+        this.setupWebSocketHandlers(this.ws, undefined);
+    }
+
+    private async connectToPartitions(connection: any, partitionCount: number): Promise<void> {
+        const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
+        const wsOptions: WebSocket.ClientOptions = {};
+        if (connection.authToken) {
+            wsOptions.headers = { 'Authorization': `Bearer ${connection.authToken}` };
+        }
+
+        // Connect to all partitions
+        for (let partition = 0; partition < partitionCount; partition++) {
+            const partitionTopicName = `${this.topicName}-partition-${partition}`;
+            const wsUrl = `${baseUrl}/ws/v2/producer/persistent/${this.tenant}/${this.namespace}/${partitionTopicName}`;
+
+            this.logger.info(`Connecting to partition ${partition}: ${wsUrl}`);
+
+            const ws = new WebSocket(wsUrl, wsOptions);
+            this.wsConnections.set(partition, ws);
+            this.setupWebSocketHandlers(ws, partition);
+        }
+
+        // Mark as connected once first partition connects
+        this.producerState.isConnected = true;
+    }
+
+    private setupWebSocketHandlers(ws: WebSocket, partition: number | undefined): void {
+        const partitionLabel = partition !== undefined ? ` (partition ${partition})` : '';
+
+        ws.on('open', () => {
+            this.logger.info(`WebSocket connected${partitionLabel}`);
+            if (!this.producerState.isConnected) {
+                this.producerState.isConnected = true;
+                this.postMessage({ command: 'connected' });
+                this.updateStatus();
+            }
+        });
+
+        ws.on('message', (data) => {
+            try {
+                const response = JSON.parse(data.toString());
+                if (response.result === 'ok') {
+                    this.producerState.messageCount++;
+                    this.producerState.lastMessageTime = Date.now();
+                    const messageInfo = partition !== undefined
+                        ? `${response.messageId} (partition ${partition})`
+                        : response.messageId;
+                    this.postMessage({
+                        command: 'messageSent',
+                        messageId: messageInfo,
+                        count: this.producerState.messageCount
+                    });
+                } else {
+                    this.producerState.errorCount++;
+                    this.postMessage({
+                        command: 'error',
+                        message: `${response.errorMsg || 'Unknown error'}${partitionLabel}`
+                    });
+                }
+                this.updateStatus();
+            } catch (e) {
+                this.logger.error('Failed to parse WebSocket message', e);
+            }
+        });
+
+        ws.on('error', (error) => {
+            this.logger.error(`WebSocket error${partitionLabel}`, error);
+            this.producerState.errorCount++;
+            this.postMessage({
+                command: 'error',
+                message: `WebSocket error${partitionLabel}: ${error.message}`
+            });
+            // Only mark as disconnected if all connections are down
+            if (this.wsConnections.size === 0 && !this.ws) {
+                this.producerState.isConnected = false;
+                this.updateStatus();
+            }
+        });
+
+        ws.on('close', () => {
+            this.logger.info(`WebSocket closed${partitionLabel}`);
+            if (partition !== undefined) {
+                this.wsConnections.delete(partition);
+            }
+            // Only mark as disconnected if all connections are down
+            if (this.wsConnections.size === 0 && !this.ws) {
+                this.producerState.isConnected = false;
+                this.postMessage({ command: 'disconnected' });
+                this.updateStatus();
+            }
+        });
+    }
+
     private closeWebSocket(): void {
         if (this.ws) {
             this.ws.close();
             this.ws = undefined;
         }
+        // Close all partition connections
+        for (const ws of this.wsConnections.values()) {
+            ws.close();
+        }
+        this.wsConnections.clear();
     }
 
     private async handleMessage(message: any): Promise<void> {
@@ -230,7 +292,29 @@ export class MessageProducerWebview {
     }
 
     private async sendMessage(payload: string, key?: string, properties?: Record<string, string>): Promise<void> {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        let targetWs: WebSocket | undefined;
+
+        if (this.partitionCount > 0) {
+            // Partitioned topic - use round-robin to select partition
+            const partition = this.currentPartitionIndex % this.partitionCount;
+            this.currentPartitionIndex++;
+            targetWs = this.wsConnections.get(partition);
+
+            if (!targetWs || targetWs.readyState !== WebSocket.OPEN) {
+                // Try to find any connected partition
+                for (const ws of this.wsConnections.values()) {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        targetWs = ws;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Non-partitioned topic
+            targetWs = this.ws;
+        }
+
+        if (!targetWs || targetWs.readyState !== WebSocket.OPEN) {
             this.postMessage({
                 command: 'error',
                 message: 'WebSocket not connected'
@@ -250,7 +334,7 @@ export class MessageProducerWebview {
                 message.key = key;
             }
 
-            this.ws.send(JSON.stringify(message));
+            targetWs.send(JSON.stringify(message));
         } catch (error: any) {
             this.logger.error('Failed to send message', error);
             this.postMessage({
