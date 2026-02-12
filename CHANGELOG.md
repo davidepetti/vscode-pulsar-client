@@ -5,6 +5,16 @@ All notable changes to the Pulsar Client for VSCode extension will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Partitioned topic support for message producer and consumer
+  - Automatically detects partitioned topics via Admin API
+  - Consumer: Opens WebSocket connections to all partitions and merges messages into a single view
+  - Producer: Distributes messages across partitions using round-robin strategy
+  - Display partition number for each message in consumer UI
+  - Eliminates 404 errors when consuming from or producing to partitioned topics
+
 ## [0.2.0] - 2026-02-11
 
 ### Added

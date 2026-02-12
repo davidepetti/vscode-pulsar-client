@@ -236,6 +236,15 @@ export class PulsarClientManager {
     }
 
     /**
+     * Get partition count for a topic
+     * Returns 0 for non-partitioned topics
+     */
+    async getPartitionCount(clusterName: string, tenant: string, namespace: string, topicName: string): Promise<number> {
+        const admin = this.getAdminClient(clusterName);
+        return admin.getPartitionCount(tenant, namespace, topicName);
+    }
+
+    /**
      * Get topic statistics
      * Tries regular stats first, falls back to partitioned-stats for partitioned topics
      */
