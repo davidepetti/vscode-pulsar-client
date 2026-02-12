@@ -52,7 +52,7 @@ jobs:
             How to verify the implementation works (manual testing steps).
 
             ---
-            *Comment `/implement` to have me create a PR for this issue.*
+            *To create a PR for this issue, comment with the implement command (forward-slash + implement).*
 
             After posting the analysis, add appropriate labels to the issue:
             - Add "bug" label if it's a bug report
