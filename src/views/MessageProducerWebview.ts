@@ -30,6 +30,8 @@ export class MessageProducerWebview {
     private namespace: string = '';
     private topicName: string = '';
     private context: vscode.ExtensionContext | undefined;
+    private partitionCount: number = 0;
+    private selectedPartition: number = 0;
 
     private constructor(private clientManager: PulsarClientManager) {}
 
@@ -55,6 +57,19 @@ export class MessageProducerWebview {
             errorCount: 0,
             isConnected: false
         };
+
+        // Check if topic is partitioned
+        this.partitionCount = 0;
+        this.selectedPartition = 0;
+        try {
+            const fullTopic = `persistent://${tenant}/${namespace}/${topicName}`;
+            const metadata = await this.clientManager.getTopicMetadata(clusterName, fullTopic);
+            this.partitionCount = metadata.partitions || 0;
+            this.logger.info(`Topic has ${this.partitionCount} partitions`);
+        } catch (error) {
+            this.logger.debug('Failed to get partition count, assuming non-partitioned topic', error);
+            this.partitionCount = 0;
+        }
 
         // Close existing WebSocket if any
         this.closeWebSocket();
@@ -98,8 +113,15 @@ export class MessageProducerWebview {
 
         // Build WebSocket URL
         // Format: ws://host:port/ws/v2/producer/persistent/tenant/namespace/topic
+        // For partitioned topics: ws://host:port/ws/v2/producer/persistent/tenant/namespace/topic-partition-N
         const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
-        const wsUrl = `${baseUrl}/ws/v2/producer/persistent/${this.tenant}/${this.namespace}/${this.topicName}`;
+
+        let topicPath = this.topicName;
+        if (this.partitionCount > 0 && this.selectedPartition >= 0) {
+            topicPath = `${this.topicName}-partition-${this.selectedPartition}`;
+        }
+
+        const wsUrl = `${baseUrl}/ws/v2/producer/persistent/${this.tenant}/${this.namespace}/${topicPath}`;
 
         this.logger.info(`Connecting to WebSocket: ${wsUrl}`);
 
@@ -181,6 +203,11 @@ export class MessageProducerWebview {
                 await this.sendMessage(message.payload, message.key, message.properties);
                 break;
             case 'reconnect':
+                await this.connectWebSocket();
+                break;
+            case 'selectPartition':
+                this.selectedPartition = message.partition || 0;
+                this.closeWebSocket();
                 await this.connectWebSocket();
                 break;
             case 'getStatus':
@@ -278,6 +305,7 @@ export class MessageProducerWebview {
 
     private getHtmlContent(): string {
         const fullTopic = `persistent://${this.tenant}/${this.namespace}/${this.topicName}`;
+        const isPartitioned = this.partitionCount > 0;
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -480,6 +508,14 @@ export class MessageProducerWebview {
         <div class="status-item">
             <span>Errors: <strong id="errorCount">0</strong></span>
         </div>
+        ${isPartitioned ? `
+        <div class="status-item">
+            <label for="partitionSelect" style="margin-right: 5px;">Partition:</label>
+            <select id="partitionSelect" onchange="selectPartition()" style="padding: 4px 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 4px;">
+                ${Array.from({ length: this.partitionCount }, (_, i) => `<option value="${i}"${i === this.selectedPartition ? ' selected' : ''}>Partition ${i}</option>`).join('')}
+            </select>
+        </div>
+        ` : ''}
     </div>
 
     <div class="templates-section">
@@ -568,6 +604,15 @@ export class MessageProducerWebview {
         function reconnect() {
             vscode.postMessage({ command: 'reconnect' });
             document.getElementById('connectionText').textContent = 'Connecting...';
+        }
+
+        function selectPartition() {
+            const partitionSelect = document.getElementById('partitionSelect');
+            if (partitionSelect) {
+                const partition = parseInt(partitionSelect.value);
+                addLog('Switching to partition ' + partition + '...', 'info');
+                vscode.postMessage({ command: 'selectPartition', partition });
+            }
         }
 
         function getProperties() {

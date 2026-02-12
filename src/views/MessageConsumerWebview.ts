@@ -46,6 +46,7 @@ export class MessageConsumerWebview {
     private topicName: string = '';
     private messages: PulsarMessage[] = [];
     private compiledKeyFilterRegex: RegExp | undefined;
+    private partitionCount: number = 0;
 
     private constructor(private clientManager: PulsarClientManager) {}
 
@@ -71,6 +72,18 @@ export class MessageConsumerWebview {
             keyFilterMode: 'exact',
             autoStopOnMatch: false
         };
+
+        // Check if topic is partitioned
+        this.partitionCount = 0;
+        try {
+            const fullTopic = `persistent://${tenant}/${namespace}/${topicName}`;
+            const metadata = await this.clientManager.getTopicMetadata(clusterName, fullTopic);
+            this.partitionCount = metadata.partitions || 0;
+            this.logger.info(`Topic has ${this.partitionCount} partitions`);
+        } catch (error) {
+            this.logger.debug('Failed to get partition count, assuming non-partitioned topic', error);
+            this.partitionCount = 0;
+        }
 
         // Close existing WebSocket if any
         this.closeWebSocket();
@@ -102,7 +115,7 @@ export class MessageConsumerWebview {
         this.panel.webview.html = this.getHtmlContent();
     }
 
-    private async connectWebSocket(subscription: string, position: 'latest' | 'earliest' = 'latest'): Promise<void> {
+    private async connectWebSocket(subscription: string, position: 'latest' | 'earliest' = 'latest', partition?: number): Promise<void> {
         const connection = this.clientManager.getClusterConnection(this.clusterName);
         if (!connection) {
             this.postMessage({ command: 'error', message: 'Cluster connection not found' });
@@ -113,9 +126,16 @@ export class MessageConsumerWebview {
 
         // Build WebSocket URL with initial position
         // Format: ws://host:port/ws/v2/consumer/persistent/tenant/namespace/topic/subscription?subscriptionType=Exclusive&initialPosition=Latest
+        // For partitioned topics: ws://host:port/ws/v2/consumer/persistent/tenant/namespace/topic-partition-N/subscription
         const baseUrl = connection.webServiceUrl.replace(/^http/, 'ws');
         const initialPosition = position === 'earliest' ? 'Earliest' : 'Latest';
-        const wsUrl = `${baseUrl}/ws/v2/consumer/persistent/${this.tenant}/${this.namespace}/${this.topicName}/${subscription}?initialPosition=${initialPosition}`;
+
+        let topicPath = this.topicName;
+        if (partition !== undefined && partition >= 0) {
+            topicPath = `${this.topicName}-partition-${partition}`;
+        }
+
+        const wsUrl = `${baseUrl}/ws/v2/consumer/persistent/${this.tenant}/${this.namespace}/${topicPath}/${subscription}?initialPosition=${initialPosition}`;
 
         this.logger.info(`Connecting to WebSocket: ${wsUrl}`);
 
@@ -275,7 +295,7 @@ export class MessageConsumerWebview {
     private async handleMessage(message: any): Promise<void> {
         switch (message.command) {
             case 'connect':
-                await this.connectWebSocket(message.subscription, message.position || 'latest');
+                await this.connectWebSocket(message.subscription, message.position || 'latest', message.partition);
                 break;
             case 'disconnect':
                 this.closeWebSocket();
@@ -353,6 +373,7 @@ export class MessageConsumerWebview {
 
     private getHtmlContent(): string {
         const fullTopic = `persistent://${this.tenant}/${this.namespace}/${this.topicName}`;
+        const isPartitioned = this.partitionCount > 0;
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -616,6 +637,14 @@ export class MessageConsumerWebview {
                 <option value="earliest">Earliest (all messages)</option>
             </select>
         </div>
+        ${isPartitioned ? `
+        <div class="form-row" style="margin-top: 10px;">
+            <label for="partition">Partition:</label>
+            <select id="partition" style="flex: 1; padding: 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 4px;">
+                ${Array.from({ length: this.partitionCount }, (_, i) => `<option value="${i}">Partition ${i}</option>`).join('')}
+            </select>
+        </div>
+        ` : ''}
         <div class="form-row" style="margin-top: 10px;">
             <label for="keyFilter">Filter by key:</label>
             <input type="text" id="keyFilter" placeholder="Enter key or pattern..." style="flex: 1; padding: 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 4px;">
@@ -688,6 +717,7 @@ export class MessageConsumerWebview {
             const disconnectBtn = document.getElementById('disconnectButton');
             const subInput = document.getElementById('subscriptionName');
             const posSelect = document.getElementById('initialPosition');
+            const partitionSelect = document.getElementById('partition');
             const keyFilterInput = document.getElementById('keyFilter');
             const keyFilterModeSelect = document.getElementById('keyFilterMode');
             const autoStopCheckbox = document.getElementById('autoStopOnMatch');
@@ -701,6 +731,7 @@ export class MessageConsumerWebview {
                 disconnectBtn.style.display = 'inline-block';
                 subInput.disabled = true;
                 posSelect.disabled = true;
+                if (partitionSelect) partitionSelect.disabled = true;
                 keyFilterInput.disabled = true;
                 keyFilterModeSelect.disabled = true;
                 autoStopCheckbox.disabled = true;
@@ -713,6 +744,7 @@ export class MessageConsumerWebview {
                 disconnectBtn.style.display = 'none';
                 subInput.disabled = false;
                 posSelect.disabled = false;
+                if (partitionSelect) partitionSelect.disabled = false;
                 keyFilterInput.disabled = false;
                 keyFilterModeSelect.disabled = false;
                 autoStopCheckbox.disabled = false;
@@ -726,6 +758,8 @@ export class MessageConsumerWebview {
             const keyFilter = document.getElementById('keyFilter').value.trim();
             const keyFilterMode = document.getElementById('keyFilterMode').value;
             const autoStopOnMatch = document.getElementById('autoStopOnMatch').checked;
+            const partitionSelect = document.getElementById('partition');
+            const partition = partitionSelect ? parseInt(partitionSelect.value) : undefined;
 
             if (!subscription) {
                 addLog('Please enter a subscription name', 'error');
@@ -741,6 +775,9 @@ export class MessageConsumerWebview {
             });
 
             let logMsg = 'Connecting to subscription: ' + subscription + ' (position: ' + position + ')';
+            if (partition !== undefined) {
+                logMsg += ', partition: ' + partition;
+            }
             if (keyFilter) {
                 logMsg += ', key filter: ' + keyFilter + ' (' + keyFilterMode + ')';
                 if (autoStopOnMatch) {
@@ -749,7 +786,7 @@ export class MessageConsumerWebview {
             }
             addLog(logMsg, 'info');
 
-            vscode.postMessage({ command: 'connect', subscription, position });
+            vscode.postMessage({ command: 'connect', subscription, position, partition });
         }
 
         function disconnect() {

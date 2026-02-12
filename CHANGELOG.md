@@ -5,6 +5,18 @@ All notable changes to the Pulsar Client for VSCode extension will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Partition selector for producing and consuming messages on partitioned topics
+  - Message Consumer now shows a partition dropdown when connected to a partitioned topic
+  - Message Producer now shows a partition dropdown to select which partition to produce to
+  - WebSocket URLs automatically target the selected partition (e.g., `topic-partition-0`)
+
+### Fixed
+- Message Consumer and Producer now work correctly with partitioned topics
+- 404 errors when consuming from or producing to partitioned topics are resolved
+
 ## [0.2.0] - 2026-02-11
 
 ### Added
